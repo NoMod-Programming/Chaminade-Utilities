@@ -6,10 +6,12 @@ written piece of JavaScript and ASP.NET garbabe,
 with a very basic understanding of security.
 """
 
+import re
 import requests
 from bs4 import BeautifulSoup
 
 BB_BASE_URL = "https://www.chaminadeonline.org"
+COURSEID_REGEX = re.compile(r"id=(\w+)")
 
 
 class BlackboardSpider(object):
@@ -55,9 +57,9 @@ class BlackboardSpider(object):
             allow_redirects=True
         )
 
-    def get_classes(self):
+    def get_courses(self):
         """
-        Return a list of courses.
+        Return a list of courses and their ids.
 
         Requires login to use.
         """
@@ -73,11 +75,22 @@ class BlackboardSpider(object):
         doc = BeautifulSoup(self.req.text, 'html.parser')
         doc = BeautifulSoup(doc.find_all(text=True)[-1], 'html.parser')
         class_listing = doc.find("ul", class_="courseListing")
-        courses = []
+        courses = {}
         for course in class_listing.find_all('li'):
-            course_name = (course.find('a').text)
-            courses.append(':'.join(course_name.split(':')[1:]).strip())
+            course_name = course.find('a').text
+            course_name = (':'.join(course_name.split(':')[1:]).strip())
+            course_id = course.find('a')['href']
+            course_id = COURSEID_REGEX.search(course_id).group(1)
+            courses[course_name] = course_id
         return courses
+
+    def get_coursenames(self):
+        """
+        Return a list of course names.
+
+        Requires login to use
+        """
+        return list(self.get_courses().keys())
 
 
 def main():
@@ -88,7 +101,7 @@ def main():
     """
     spider = BlackboardSpider(input("Username: "), input("Password: "))
     spider.login()
-    print(spider.get_classes())
+    print(spider.get_coursenames())
 
 if __name__ == "__main__":
     main()
