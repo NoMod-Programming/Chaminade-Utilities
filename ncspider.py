@@ -9,6 +9,7 @@ of security.
 import posixpath
 import requests
 from bs4 import BeautifulSoup
+from multiprocessing import Pool
 
 NC_BASE_URL = "http://netclassroom.chaminade.org"
 NC_LOGIN_URL = NC_BASE_URL + "/NetClassroom7/Forms/login.aspx"
@@ -39,7 +40,7 @@ class NetclassroomSpider(object):
             'Referer': NC_LOGIN_URL,
         }
 
-    def navigate_to_page(self, eventtarget, eventargument):
+    def navigate_to_page(self, eventtarget, eventargument, fakeinputs = None):
         """
         Navigate to the specified page.
 
@@ -51,6 +52,8 @@ class NetclassroomSpider(object):
         inputs = {}
         for inputtag in the_form.find_all('input'):
             inputs[inputtag['name']] = inputtag.get('value', '')
+        for inputname, inputvalue in (fakeinputs or {}).items():
+            inputs[inputname] = inputvalue
         inputs['__postbackAction'] = 'dont_save'
         inputs['__EVENTTARGET'] = eventtarget
         inputs['__EVENTARGUMENT'] = eventargument
@@ -106,8 +109,26 @@ class NetclassroomSpider(object):
         # Actually get the classes now
         doc = BeautifulSoup(self.req.text, 'html.parser')
         class_spinner = doc.find(id='_ctl14_cpWhatever_lstWhatever')
-        return [','.join(option.text.split(',')[1:]).strip()
-                for option in class_spinner.find_all('option')]
+        classes = {}
+        for option_spinner in class_spinner.find_all('option'):
+            classes[','.join(option_spinner.text.split(',')[1:]).strip()] = option_spinner['value']
+        return classes
+
+    def get_courses(self):
+        return list(self.getclasses().keys())
+
+    def grades_for_class(self, courseId):
+        """
+        Return the grade, in a double.
+
+        Requires login, and might only work with Chaminade.
+        """ 
+        self.navigate_to_page('_ctl14$cpWhatever$lstWhatever','',{'_ctl14:cpWhatever:lstWhatever':courseId})
+        doc = BeautifulSoup(self.req.text, 'html.parser')
+        nc_content = doc.find(id='ncContent_webDG')
+        grade_text = nc_content.div.find_all('span')[0].text.split(':')[-1]
+        grade_float = float(grade_text)
+        return grade_float
 
 
 def main():
@@ -119,6 +140,8 @@ def main():
     spider = NetclassroomSpider(input("Username: "), input("Password: "))
     spider.login()
     print(spider.getclasses())
+    for course_name, course_id in spider.getclasses().items():
+        print("Grade for class \"{}\":".format(course_name).ljust(75, ' ') + str(spider.grades_for_class(course_id)))
 
 if __name__ == "__main__":
     main()
