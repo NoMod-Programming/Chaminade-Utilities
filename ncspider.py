@@ -7,9 +7,9 @@ of security.
 """
 
 import posixpath
+import re
 import requests
 from bs4 import BeautifulSoup
-from multiprocessing import Pool
 
 NC_BASE_URL = "http://netclassroom.chaminade.org"
 NC_LOGIN_URL = NC_BASE_URL + "/NetClassroom7/Forms/login.aspx"
@@ -52,13 +52,13 @@ class NetclassroomSpider(object):
         inputs = {}
         for inputtag in the_form.find_all('input'):
             inputs[inputtag['name']] = inputtag.get('value', '')
-        for inputname, inputvalue in (fakeinputs or {}).items():
-            inputs[inputname] = inputvalue
         inputs['__postbackAction'] = 'dont_save'
         inputs['__EVENTTARGET'] = eventtarget
         inputs['__EVENTARGUMENT'] = eventargument
         inputs['availableWidth'] = '800'
         inputs['availableHeight'] = '600'
+        for inputname, inputvalue in (fakeinputs or {}).items():
+            inputs[inputname] = inputvalue
         form_action = doc.body.form.get('action')
         form_post = posixpath.join(posixpath.dirname(NC_LOGIN_URL),
                                    form_action)
@@ -93,7 +93,6 @@ class NetclassroomSpider(object):
         # Check for a successful login
         login_success = 'loading' in self.req.text.lower()
         if login_success:
-            print("Login successful!")
             return True
         raise RuntimeError(
             "Login failed for user \"{}\"".format(self.username)
@@ -130,6 +129,24 @@ class NetclassroomSpider(object):
         grade_float = float(grade_text)
         return grade_float
 
+    def course_schedule(self):
+        """
+        Return the current schedule for today.
+
+        Requires login, and only works with Chaminade.
+        """
+        self.__init__(self.username, self.password)
+        self.login()
+        self.navigate_to_page('myMenuId:Menu1','mnuScheduleCalendar')
+        doc = BeautifulSoup(self.req.text, 'html.parser')
+        date_div = doc.find(id='Table1')
+        curr_schedule = []
+        for date_span in date_div.find_all('span'):
+            mat = re.match(r'(?P<block>\w),.*?, (?P<course_name>.*?),\s*(?P<teacher>.*?),\s*(?P<classroom>.*)', date_span.text)
+            if mat:
+                curr_schedule.append((mat.group('block'), mat.group('course_name'), mat.group('teacher'), mat.group('classroom')))
+        return curr_schedule
+
 
 def main():
     """
@@ -142,6 +159,8 @@ def main():
     print(spider.getclasses())
     for course_name, course_id in spider.getclasses().items():
         print("Grade for class \"{}\":".format(course_name).ljust(75, ' ') + str(spider.grades_for_class(course_id)))
+    print("Current schedule:")
+    print(spider.course_schedule())
 
 if __name__ == "__main__":
     main()
